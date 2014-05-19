@@ -1,0 +1,161 @@
+var scheme   = "ws://";
+var uri      = scheme + window.document.location.host + "/";
+var ws       = new WebSocket(uri);
+var callings = {};
+
+ws.onmessage = function(message) {
+	var data = JSON.parse(message.data);
+	callings = data.payload;
+	putDataInLists();
+};
+
+function putDataInLists() {
+  for (list in callings) {
+    // empty list
+    $('.to-' + list).empty();
+    for (calling in callings[list]) {
+      dataToHtml(callings[list][calling]);
+    }
+  }
+}
+
+function assembleData() {
+  var data = {
+    id: $('#id').val() || null,
+    type: $('input:radio[name="type"]:checked').val(),
+    person: $('#person').val(),
+    position: $('#position').val(),
+    owner: $('#owner').val(),
+    status: $('#status').val(),
+  };
+  return data;
+}
+
+function clearData() {
+    $('#id').val('');
+    $('input:radio[name="type"]').val(['C'])
+    $('#position').val('');
+    $('#owner').val('');
+    $('#status').val('extend');
+    $('#person').val('').focus();
+    $('.status-buttons button').removeClass('active');
+    $('button[value="extend"]').addClass('active');
+}
+
+function dataToHtml(data) {
+  var li = document.createElement('li');
+  li.setAttribute('class', 'list-group-item');
+
+  var type = data.type == 'C' ? 'Call ' : 'Release ';
+  var joiner = data.type == 'C' ? ' to ' : ' from ';
+
+  var title = document.createElement('p')
+  title.appendChild(document.createTextNode(type + data.person + joiner + data.position + ' (' + data.owner + ')'));
+  li.appendChild(title);
+  li.appendChild(buttonBarForData(data));
+  $('.to-' + data.status).append(li);
+}
+
+function buttonBarForData(data) {
+  var bar = document.createElement('div');
+  bar.setAttribute('class', 'btn-group');
+
+  if (data.status != 'extend') {
+    var b1 = createButtonForData(data);
+    b1.appendChild(createGlyphForData(data, 'glyphicon-hand-left'));
+    $(b1).on('click', function(event) {
+      event.preventDefault();
+      var payload = {
+	id: $(this).val(),
+	from: data.status,
+	direction: 'left'
+      };
+      ws.send(JSON.stringify({ topic: 'move', payload: payload }));
+    });
+    bar.appendChild(b1);
+  }
+
+  var b2 = createButtonForData(data);
+  b2.appendChild(createGlyphForData(data, 'glyphicon-pencil'));
+  $(b2).on('click', function(event) {
+    event.preventDefault();
+    loadEditor(data.status, $(this).val());
+  });
+  bar.appendChild(b2);
+
+  var b3 = createButtonForData(data);
+  b3.appendChild(createGlyphForData(data, 'glyphicon-remove'));
+  $(b3).on('click', function(event) {
+    event.preventDefault();
+    if (confirm('Are you sure you want to delete this?')) {
+      ws.send(JSON.stringify({ topic: 'delete', payload: $(this).val() }));
+    }
+  });
+  bar.appendChild(b3);
+
+  if (data.status != 'record') {
+    var b4 = createButtonForData(data);
+    b4.appendChild(createGlyphForData(data, 'glyphicon-hand-right'));
+    $(b4).on('click', function(event) {
+      event.preventDefault();
+      var payload = {
+	id: $(this).val(),
+	from: data.status,
+	direction: 'right'
+      };
+      ws.send(JSON.stringify({ topic: 'move', payload: payload }));
+    });
+    bar.appendChild(b4);
+  }
+
+  return bar;
+}
+
+function createButtonForData(data) {
+  var b = document.createElement('button');
+  b.setAttribute('type', 'button');
+  b.setAttribute('class', 'btn btn-default btn-sm');
+  b.setAttribute('value', data.id);
+  return b;
+}
+
+function createGlyphForData(data, glyph) {
+  var s = document.createElement('span');
+  s.setAttribute('class', 'glyphicon ' + glyph);
+  return s;
+}
+
+function loadEditor(status, id) {
+  var calling = callings[status][id];
+  $('#id').val(calling.id);
+  $('input:radio[name="type"]').val([calling.type]);
+  $('#person').val(calling.person);
+  $('#position').val(calling.position);
+  $('#owner').val(calling.owner);
+  $('#status').val(calling.status);
+
+  $('.status-buttons button').removeClass('active');
+  $('.status-buttons button[value="' + calling.status + '"]').addClass('active');
+}
+
+$(document).ready(function() {
+	$("#callingform").on("submit", function(event) {
+		event.preventDefault();
+		$('#error').hide();
+		var payload = assembleData();
+		if (!(payload.person && payload.position && payload.owner)) {
+		  $('#error').show();
+		  return;
+		}
+
+		ws.send(JSON.stringify({ topic: 'save', payload: payload }));
+		clearData();
+	});
+
+	$('.status-buttons button').on('click', function(event) {
+	  $('.status-buttons button').removeClass('active');
+	  $(this).addClass('active');
+	  $('#status').val($(this).val());
+	});
+});
+
